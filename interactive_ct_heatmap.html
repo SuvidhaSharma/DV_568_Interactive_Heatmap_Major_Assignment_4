@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Interactive Heatmap Data Visualization</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      background: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-family: 'Times New Roman', serif;
+    }
+
+    h1 {
+        font-size: 24px;
+        margin: 25px 0 10px;
+        text-align: center;
+        color: #222;
+    }
+
+    #container {
+      width: 100%;
+      max-width: 800px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+      padding: 20px;
+      background-color: #fff;
+    }
+
+    svg {
+      
+      width: 100%;
+      height: auto;
+      background-color: white;
+      border: 1px solid #ccc;
+    }
+
+    .panel {
+      width: 100%;
+      max-width: 500px;
+      text-align: center;
+      margin-top: 25px;
+    }
+
+    .panel label {
+      font-size: 16px;
+      display: block;
+      margin-top: 20px;
+      margin-bottom: 5px;
+    }
+
+    .panel input[type="range"] {
+      width: 100%;
+      appearance: none;
+      height: 8px;
+      background: #ddd;
+      border-radius: 5px;
+      outline: none;
+      transition: background 0.3s ease;
+    }
+
+    .panel input[type="range"]::-webkit-slider-thumb {
+      appearance: none;
+      width: 18px;
+      height: 18px;
+      background: #4CAF50;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+
+    .panel span {
+      font-size: 14px;
+      display: inline-block;
+      margin-top: 5px;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Interactive Heatmap Visualization of CT Scan Using Contour Mapping</h1>
+  <div id="container">
+    <svg id="canvas" viewBox="0 0 750 580" preserveAspectRatio="xMidYMid slice"></svg>
+  </div>
+  <div class="panel">
+    <label for="thresholdInput">Threshold:</label>
+    <input type="range" id="thresholdInput" min="10" max="700" step="10" value="100" />
+    <span id="thresholdVal">100</span>
+
+    <label for="densityInput">Density Slider:</label>
+    <input type="range" id="densityInput" min="10" max="800" step="10" value="800" />
+    <span id="densityVal">800</span>
+  </div>
+
+  <script>
+    const svg = d3.select("#canvas");
+    const pathGen = d3.geoPath();
+    const dataURL = "https://raw.githubusercontent.com/SuvidhaSharma/DV_568_Interactive_Heatmap_Major_Assignment_4/refs/heads/main/Data_CT.csv ";
+
+    let thresholdStep = 100;
+    let densityLevel = 800;
+
+    function createColorScale(min, max) {
+      return d3.scaleLinear()
+        .domain(d3.range(min, max, (max - min) / 7))
+        .range([
+          "white", "#0d1a50", "#3e5eba", "#2b83ba",
+          "#abdda4", "#ffffbf", "#fdae61", "#d7191c"
+        ])
+        .interpolate(d3.interpolateHcl);
+    }
+
+    function prepareDataAndRender() {
+      d3.csv(dataURL).then(raw => {
+        const values = raw.map(d => +d[Object.keys(d)[0]]);
+        const gridSize = [512, 512];
+        const minVal = d3.min(values);
+        const maxVal = d3.max(values);
+        const colorScale = createColorScale(minVal, maxVal);
+        initializeControls(values, gridSize, minVal, maxVal, colorScale);
+      });
+    }
+
+    function initializeControls(dataArray, size, min, max, colorFn) {
+      const tSlider = document.getElementById("thresholdInput");
+      const dSlider = document.getElementById("densityInput");
+
+      const updateDisplay = () => {
+        document.getElementById("thresholdVal").textContent = thresholdStep;
+        document.getElementById("densityVal").textContent = densityLevel;
+        drawHeatmap(dataArray, size[0], size[1], min, max, colorFn);
+      };
+     
+    function debounce(func, wait) {
+        let timeout;
+        return function (...args) {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(this, args), wait);
+       };
+    }
+
+        tSlider.addEventListener("input", debounce(e => {
+            thresholdStep = +e.target.value;
+            document.getElementById("thresholdVal").textContent = thresholdStep;
+            drawHeatmap(dataArray, size[0], size[1], min, max, colorFn);
+        }, 200));
+
+        dSlider.addEventListener("input", debounce(e => {
+            densityLevel = +e.target.value;
+            document.getElementById("densityVal").textContent = densityLevel;
+            drawHeatmap(dataArray, size[0], size[1], min, max, colorFn);
+        }, 200));
+
+      updateDisplay();
+    }
+
+    function drawHeatmap(pixels, w, h, low, high, fillScale) {
+      svg.selectAll("*").remove();
+    
+    
+      const step = Math.max(1, thresholdStep);
+      const numContours = Math.max(3, Math.floor(densityLevel / 50));
+      
+      const thresholds = d3.range(low + step, high, (high - low) / numContours);
+      
+      const contours = d3.contours()
+        .size([w, h])
+        .thresholds(thresholds)(pixels);
+     
+      const g = svg.append("g");
+      
+      g.selectAll("path")
+        .data(contours)
+        .join("path")
+        .attr("d", pathGen)
+        .attr("fill", d => fillScale(d.value))
+        .attr("stroke", "#000")
+        .attr("stroke-width", 0.1)
+        .attr("fill-opacity", 1);
+
+      const bbox = g.node().getBBox();
+      const dx = (750 - bbox.width) / 2 - bbox.x;
+      const dy = (580 - bbox.height) / 2 - bbox.y;
+
+
+      g.attr("transform", `translate(${dx}, ${dy})`);
+     }
+
+    prepareDataAndRender();
+  </script>
+
+</body>
+</html>
